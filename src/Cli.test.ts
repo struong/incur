@@ -3522,6 +3522,49 @@ describe('fetch', () => {
   })
 })
 
+describe('z.file()', () => {
+  test('cli.fetch parses multipart/form-data with file field', async () => {
+    const { file } = await import('incur')
+    const cli = Cli.create('test')
+    cli.command('upload', {
+      args: z.object({ image: file().describe('Image to process') }),
+      run(c) {
+        return { size: c.args.image.bytes.length, name: c.args.image.name }
+      },
+    })
+
+    const formData = new FormData()
+    formData.append('image', new File([new Uint8Array([1, 2, 3])], 'photo.png'))
+
+    const res = await cli.fetch(
+      new Request('http://localhost/upload', { method: 'POST', body: formData }),
+    )
+    const body = await res.json()
+    expect(body.data).toEqual({ size: 3, name: 'photo.png' })
+  })
+
+  test('cli.fetch parses application/octet-stream body', async () => {
+    const { file } = await import('incur')
+    const cli = Cli.create('test')
+    cli.command('upload', {
+      args: z.object({ image: file().describe('Image') }),
+      run(c) {
+        return { size: c.args.image.bytes.length }
+      },
+    })
+
+    const res = await cli.fetch(
+      new Request('http://localhost/upload', {
+        method: 'POST',
+        body: new Uint8Array([10, 20, 30, 40]),
+        headers: { 'content-type': 'application/octet-stream' },
+      }),
+    )
+    const body = await res.json()
+    expect(body.data).toEqual({ size: 4 })
+  })
+})
+
 describe('c.raw()', () => {
   test('cli.fetch returns raw Response bypassing JSON envelope', async () => {
     const cli = Cli.create('test')

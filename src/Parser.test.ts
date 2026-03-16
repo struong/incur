@@ -253,3 +253,35 @@ describe('parse', () => {
     expect(result.options).toEqual({ limit: 5 })
   })
 })
+
+describe('file coercion', () => {
+  test('coerces file path arg to FileValue', async () => {
+    const { file } = await import('incur')
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const os = await import('node:os')
+
+    const tmpDir = os.tmpdir()
+    const tmpFile = path.join(tmpDir, 'incur-test-file.txt')
+    fs.writeFileSync(tmpFile, 'hello')
+
+    try {
+      const result = Parser.parse([tmpFile], {
+        args: z.object({ input: file() }),
+      })
+      expect(result.args.input.bytes).toEqual(new Uint8Array([104, 101, 108, 108, 111]))
+      expect(result.args.input.name).toBe('incur-test-file.txt')
+    } finally {
+      fs.unlinkSync(tmpFile)
+    }
+  })
+
+  test('throws ParseError for non-existent file', async () => {
+    const { file } = await import('incur')
+    expect(() =>
+      Parser.parse(['/nonexistent/path.txt'], {
+        args: z.object({ input: file() }),
+      }),
+    ).toThrow("Cannot read file for 'input'")
+  })
+})

@@ -252,6 +252,43 @@ describe('Mcp', () => {
     expect(progress[1].params.progress).toBe(2)
   })
 
+  test('callTool decodes base64 file param', async () => {
+    const { file } = await import('incur')
+    const commands = new Map<string, any>()
+    commands.set('upload', {
+      description: 'Upload a file',
+      args: z.object({ image: file().describe('Image') }),
+      run(c: any) {
+        return { size: c.args.image.bytes.length }
+      },
+    })
+
+    const tools = Mcp.collectTools(commands, [])
+    const b64 = Buffer.from([1, 2, 3, 4, 5]).toString('base64')
+    const result = await Mcp.callTool(tools[0]!, { image: b64 })
+    expect(result.isError).toBeUndefined()
+    expect(JSON.parse(result.content[0]!.text)).toEqual({ size: 5 })
+  })
+
+  test('buildToolSchema emits base64 string schema for file fields', async () => {
+    const { file } = await import('incur')
+    const commands = new Map<string, any>()
+    commands.set('upload', {
+      description: 'Upload a file',
+      args: z.object({ image: file().describe('An image file') }),
+      run() {
+        return {}
+      },
+    })
+
+    const tools = Mcp.collectTools(commands, [])
+    expect(tools[0]!.inputSchema.properties.image).toEqual({
+      type: 'string',
+      contentEncoding: 'base64',
+      description: 'An image file',
+    })
+  })
+
   test('callTool returns base64 for c.raw() with binary body', async () => {
     const commands = new Map<string, any>()
     commands.set('binary', {

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import { z } from 'zod'
 
 import * as Cli from './Cli.js'
+import { isFileSchema } from './File.js'
 import { importCli } from './internal/utils.js'
 
 /** Imports a CLI from `input` (must `export default` a `Cli`), generates the `.d.ts`, and writes it to `output`. */
@@ -49,9 +50,10 @@ function schemaToType(schema: z.ZodObject<any> | undefined): string {
   const defs = (json.$defs ?? {}) as Record<string, Record<string, unknown>>
   const properties = json.properties as Record<string, Record<string, unknown>> | undefined
   if (!properties || Object.keys(properties).length === 0) return '{}'
-  const entries = Object.entries(properties).map(
-    ([key, value]) => `${key}: ${resolveType(value, defs)}`,
-  )
+  const entries = Object.entries(properties).map(([key, value]) => {
+    if (isFileSchema(schema.shape[key])) return `${key}: { bytes: Uint8Array; name?: string }`
+    return `${key}: ${resolveType(value, defs)}`
+  })
   return `{ ${entries.join('; ')} }`
 }
 

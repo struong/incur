@@ -247,4 +247,16 @@ describe('formatRoot', () => {
         --verbose                           Show full output envelope"
     `)
   })
+
+  test('resolves file type name for z.file() options', async () => {
+    const { file } = await import('incur')
+    const result = Help.formatCommand('upload', {
+      description: 'Upload a file',
+      options: z.object({
+        image: file().describe('Image to upload'),
+      }),
+    })
+    expect(result).toContain('--image <file>')
+    expect(result).toContain('Image to upload')
+  })
 })

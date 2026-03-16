@@ -1,4 +1,6 @@
 export { z } from 'zod'
+export { file } from './File.js'
+export type { FileValue } from './File.js'
 export * as Cli from './Cli.js'
 export * as Completions from './Completions.js'
 export { default as middleware } from './middleware.js'

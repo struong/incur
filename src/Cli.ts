@@ -5,6 +5,8 @@ import * as Completions from './Completions.js'
 import type { FieldError } from './Errors.js'
 import { IncurError, ValidationError } from './Errors.js'
 import * as Fetch from './Fetch.js'
+import { isFileSchema } from './File.js'
+import type { FileValue } from './File.js'
 import * as Filter from './Filter.js'
 import * as Formatter from './Formatter.js'
 import * as Help from './Help.js'
@@ -1547,7 +1549,23 @@ async function fetchImpl(
   else {
     try {
       const contentType = req.headers.get('content-type') ?? ''
-      if (contentType.includes('application/json'))
+      if (contentType.includes('multipart/form-data')) {
+        const formData = await req.formData()
+        for (const [key, value] of formData.entries()) {
+          if (value instanceof File) {
+            inputOptions[key] = {
+              bytes: new Uint8Array(await value.arrayBuffer()),
+              name: value.name,
+            } satisfies FileValue
+          } else inputOptions[key] = value
+        }
+      } else if (contentType.includes('application/octet-stream')) {
+        const bytes = new Uint8Array(await req.arrayBuffer())
+        // Assign to the file arg name from query string, if provided
+        const fileKey = url.searchParams.get('_file_field')
+        if (fileKey) inputOptions[fileKey] = { bytes } satisfies FileValue
+        else inputOptions._octetBody = { bytes } satisfies FileValue
+      } else if (contentType.includes('application/json'))
         inputOptions = (await req.json()) as Record<string, unknown>
     } catch {}
   }
@@ -1629,8 +1647,38 @@ async function executeCommand(
   let response: Response | undefined
 
   const runCommand = async () => {
-    const { args } = Parser.parse(rest, { args: command.args })
-    const parsedOptions = command.options ? command.options.parse(inputOptions) : {}
+    // Extract positional args from path segments (no validation yet)
+    const pathArgs: Record<string, unknown> = {}
+    if (command.args) {
+      const keys = Object.keys(command.args.shape)
+      for (let i = 0; i < keys.length && i < rest.length; i++) pathArgs[keys[i]!] = rest[i]
+    }
+
+    // Resolve _octetBody → assign to the single z.file() arg
+    const resolvedInput = { ...inputOptions }
+    if ('_octetBody' in resolvedInput && command.args) {
+      const fileArgName = Object.keys(command.args.shape).find((k) =>
+        isFileSchema(command.args.shape[k]),
+      )
+      if (fileArgName) {
+        resolvedInput[fileArgName] = resolvedInput._octetBody
+        delete resolvedInput._octetBody
+      }
+    }
+
+    // Split input into args vs options by schema keys
+    const argKeys = new Set(command.args ? Object.keys(command.args.shape) : [])
+    const bodyArgs: Record<string, unknown> = {}
+    const bodyOptions: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(resolvedInput)) {
+      if (argKeys.has(key)) bodyArgs[key] = value
+      else bodyOptions[key] = value
+    }
+
+    // Merge: body args first, then path args override
+    const mergedArgs = { ...bodyArgs, ...pathArgs }
+    const parsedArgs = command.args ? Parser.validate(command.args, mergedArgs) : {}
+    const parsedOptions = command.options ? Parser.validate(command.options, bodyOptions) : {}
 
     const okFn = (data: unknown): never => ({ [sentinel_]: 'ok', data }) as never
     const errorFn = (opts: {
@@ -1657,7 +1705,7 @@ async function executeCommand(
 
     const result = command.run({
       agent: true,
-      args,
+      args: parsedArgs,
       env: {},
       error: errorFn,
       format: 'json',
@@ -2178,6 +2226,7 @@ type RawResult = {
   [sentinel]: 'raw'
   body: Uint8Array | string
   contentType: string
+  cta?: undefined
   status: number
   headers: Record<string, string>
 }

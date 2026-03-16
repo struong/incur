@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Readable, Writable } from 'node:stream'
 
+import { isFileSchema } from './File.js'
 import * as Schema from './Schema.js'
 
 /** Starts a stdio MCP server that exposes commands as tools. */
@@ -62,6 +63,19 @@ export async function callTool(
 ): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
   try {
     const { args, options } = splitParams(params, tool.command)
+
+    // Decode base64 strings for file-typed fields
+    for (const [key, value] of Object.entries(args)) {
+      const shape = tool.command.args?.shape?.[key]
+      if (shape && isFileSchema(shape) && typeof value === 'string')
+        args[key] = { bytes: new Uint8Array(Buffer.from(value, 'base64')) }
+    }
+    for (const [key, value] of Object.entries(options)) {
+      const shape = tool.command.options?.shape?.[key]
+      if (shape && isFileSchema(shape) && typeof value === 'string')
+        options[key] = { bytes: new Uint8Array(Buffer.from(value, 'base64')) }
+    }
+
     const parsedArgs = tool.command.args ? tool.command.args.parse(args) : {}
     const parsedOptions = tool.command.options ? tool.command.options.parse(options) : {}
     const parsedEnv = tool.command.env ? tool.command.env.parse(process.env) : {}
@@ -199,7 +213,19 @@ function buildToolSchema(
   for (const schema of [args, options]) {
     if (!schema) continue
     const json = Schema.toJsonSchema(schema)
-    Object.assign(properties, (json.properties as Record<string, unknown>) ?? {})
+    const jsonProps = (json.properties ?? {}) as Record<string, Record<string, unknown>>
+
+    // Override file-typed fields with base64 string schema
+    for (const [key, field] of Object.entries(schema.shape)) {
+      if (isFileSchema(field))
+        jsonProps[key] = {
+          type: 'string',
+          contentEncoding: 'base64',
+          description: (field as any).description ?? 'Base64-encoded file content',
+        }
+    }
+
+    Object.assign(properties, jsonProps)
     required.push(...((json.required as string[]) ?? []))
   }
 

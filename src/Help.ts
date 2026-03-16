@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isFileSchema } from './File.js'
 
 /** Formats help text for a router CLI or command group. */
 export function formatRoot(name: string, options: formatRoot.Options = {}): string {
@@ -270,6 +271,7 @@ function optionEntries(schema: z.ZodObject<any>, alias?: Record<string, string> 
 function resolveTypeName(schema: unknown): string {
   if (isCountSchema(schema)) return 'count'
   const unwrapped = unwrap(schema)
+  if (isFileSchema(unwrapped)) return 'file'
   if (unwrapped instanceof z.ZodString) return 'string'
   if (unwrapped instanceof z.ZodNumber) return 'number'
   if (unwrapped instanceof z.ZodBoolean) return 'boolean'

@@ -2,6 +2,7 @@ import type { z } from 'zod'
 
 import type { FieldError } from './Errors.js'
 import { ParseError, ValidationError } from './Errors.js'
+import { isFileSchema } from './File.js'
 
 /** Parses raw argv tokens against Zod schemas for args and options. */
 export function parse<
@@ -103,13 +104,13 @@ export function parse<
   }
 
   // Assign positionals to args schema keys in order
-  const rawArgs: Record<string, string> = {}
+  const rawArgs: Record<string, unknown> = {}
   if (argsSchema) {
     const keys = Object.keys(argsSchema.shape)
     for (let j = 0; j < keys.length; j++) {
       const key = keys[j]!
       if (positionals[j] !== undefined) {
-        rawArgs[key] = positionals[j]!
+        rawArgs[key] = coerce(positionals[j]!, key, argsSchema)
       }
     }
   }
@@ -205,6 +206,11 @@ function setOption(
   }
 }
 
+/** Validates data against a Zod object schema, converting ZodError to ValidationError. */
+export function validate(schema: z.ZodObject<any>, data: Record<string, unknown>) {
+  return zodParse(schema, data)
+}
+
 /** Wraps zod schema.parse(), converting ZodError to ValidationError. */
 function zodParse(schema: z.ZodObject<any>, data: Record<string, unknown>) {
   try {
@@ -259,6 +265,15 @@ function coerce(value: unknown, name: string, schema: z.ZodObject<any>): unknown
   }
   if (typeName === 'ZodBoolean' && typeof value === 'string') {
     return value === 'true'
+  }
+  if (isFileSchema(inner) && typeof value === 'string') {
+    const fs = require('node:fs') as typeof import('node:fs')
+    const path = require('node:path') as typeof import('node:path')
+    try {
+      return { bytes: new Uint8Array(fs.readFileSync(value)), name: path.basename(value) }
+    } catch {
+      throw new ParseError({ message: `Cannot read file for '${name}': ${value}` })
+    }
   }
   return value
 }
