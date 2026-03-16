@@ -71,12 +71,30 @@ export async function callTool(
     const errorFn = (opts: { code: string; message: string }): never =>
       ({ [sentinel]: 'error', ...opts }) as never
 
+    const rawFn = (
+      body: Uint8Array | string,
+      opts: {
+        contentType: string
+        status?: number | undefined
+        headers?: Record<string, string> | undefined
+      },
+    ): never => {
+      return {
+        [sentinel]: 'raw',
+        body,
+        contentType: opts.contentType,
+        status: opts.status ?? 200,
+        headers: opts.headers ?? {},
+      } as never
+    }
+
     const raw = tool.command.run({
       args: parsedArgs,
       env: parsedEnv,
       options: parsedOptions,
       ok: okFn,
       error: errorFn,
+      raw: rawFn,
     })
 
     // Streaming: send progress notifications per chunk, then return buffered result
@@ -107,6 +125,16 @@ export async function callTool(
 
     if (typeof awaited === 'object' && awaited !== null && sentinel in awaited) {
       const tagged = awaited as any
+
+      // Raw result — encode binary as base64 for MCP transport
+      if (tagged[sentinel] === 'raw') {
+        const body =
+          tagged.body instanceof Uint8Array
+            ? Buffer.from(tagged.body).toString('base64')
+            : tagged.body
+        return { content: [{ type: 'text', text: body }] }
+      }
+
       if (tagged[sentinel] === 'error')
         return {
           content: [{ type: 'text', text: tagged.message ?? 'Command failed' }],

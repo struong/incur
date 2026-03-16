@@ -251,4 +251,34 @@ describe('Mcp', () => {
     expect(progress[0].params.progress).toBe(1)
     expect(progress[1].params.progress).toBe(2)
   })
+
+  test('callTool returns base64 for c.raw() with binary body', async () => {
+    const commands = new Map<string, any>()
+    commands.set('binary', {
+      description: 'Returns raw binary',
+      run(c: any) {
+        return c.raw(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { contentType: 'image/png' })
+      },
+    })
+
+    const tools = Mcp.collectTools(commands, [])
+    const result = await Mcp.callTool(tools[0]!, {})
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0]!.text).toBe(Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'))
+  })
+
+  test('callTool returns string body as-is for c.raw()', async () => {
+    const commands = new Map<string, any>()
+    commands.set('text', {
+      description: 'Returns raw text',
+      run(c: any) {
+        return c.raw('<html>hello</html>', { contentType: 'text/html' })
+      },
+    })
+
+    const tools = Mcp.collectTools(commands, [])
+    const result = await Mcp.callTool(tools[0]!, {})
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0]!.text).toBe('<html>hello</html>')
+  })
 })

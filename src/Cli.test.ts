@@ -3521,3 +3521,49 @@ describe('fetch', () => {
     })
   })
 })
+
+describe('c.raw()', () => {
+  test('cli.fetch returns raw Response bypassing JSON envelope', async () => {
+    const cli = Cli.create('test')
+    cli.command('image', {
+      run(c) {
+        return c.raw(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { contentType: 'image/png' })
+      },
+    })
+    const res = await cli.fetch(new Request('http://localhost/image'))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('image/png')
+    const body = new Uint8Array(await res.arrayBuffer())
+    expect(body).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))
+  })
+
+  test('cli.fetch returns raw with custom status and headers', async () => {
+    const cli = Cli.create('test')
+    cli.command('created', {
+      run(c) {
+        return c.raw('{"id": 1}', {
+          contentType: 'application/json',
+          status: 201,
+          headers: { 'x-custom': 'value' },
+        })
+      },
+    })
+    const res = await cli.fetch(new Request('http://localhost/created'))
+    expect(res.status).toBe(201)
+    expect(res.headers.get('content-type')).toBe('application/json')
+    expect(res.headers.get('x-custom')).toBe('value')
+    expect(await res.text()).toBe('{"id": 1}')
+  })
+
+  test('cli writes raw body to stdout', async () => {
+    const cli = Cli.create('test')
+    cli.command('echo-raw', {
+      run(c) {
+        return c.raw('hello raw', { contentType: 'text/plain' })
+      },
+    })
+    const { output, exitCode } = await serve(cli, ['echo-raw'])
+    expect(output).toBe('hello raw')
+    expect(exitCode).toBeUndefined()
+  })
+})

@@ -366,6 +366,15 @@ export declare namespace create {
           /** Return a success result with optional metadata (e.g. CTAs). */
           ok: (data: InferReturn<output>, meta?: { cta?: CtaBlock | undefined }) => never
           options: InferOutput<options>
+          /** Return a raw response, bypassing the JSON envelope. CLI writes binary to stdout, HTTP returns as-is, MCP returns base64. */
+          raw: (
+            body: Uint8Array | string,
+            options: {
+              contentType: string
+              status?: number | undefined
+              headers?: Record<string, string> | undefined
+            },
+          ) => never
           /** Variables set by middleware. */
           var: InferVars<vars>
         }) =>
@@ -1230,6 +1239,22 @@ async function serveImpl(
     }): never => {
       return { [sentinel]: 'error', ...opts } as never
     }
+    const rawFn = (
+      body: Uint8Array | string,
+      opts: {
+        contentType: string
+        status?: number | undefined
+        headers?: Record<string, string> | undefined
+      },
+    ): never => {
+      return {
+        [sentinel]: 'raw',
+        body,
+        contentType: opts.contentType,
+        status: opts.status ?? 200,
+        headers: opts.headers ?? {},
+      } as never
+    }
 
     const result = command.run({
       agent: !human,
@@ -1241,6 +1266,7 @@ async function serveImpl(
       name,
       ok: okFn,
       options: parsedOptions,
+      raw: rawFn,
       var: varsMap,
       version: options.version,
     })
@@ -1265,6 +1291,14 @@ async function serveImpl(
     }
 
     const awaited = await result
+
+    if (isSentinel(awaited) && awaited[sentinel] === 'raw') {
+      const raw = awaited as RawResult
+      const stdout = options.stdout ?? ((s: string) => process.stdout.write(s))
+      if (raw.body instanceof Uint8Array) process.stdout.write(raw.body)
+      else stdout(raw.body)
+      return
+    }
 
     if (isSentinel(awaited)) {
       const cta = formatCtaBlock(name, awaited.cta)
@@ -1604,6 +1638,22 @@ async function executeCommand(
       message: string
       exitCode?: number | undefined
     }): never => ({ [sentinel_]: 'error', ...opts }) as never
+    const rawFn = (
+      body: Uint8Array | string,
+      opts: {
+        contentType: string
+        status?: number | undefined
+        headers?: Record<string, string> | undefined
+      },
+    ): never => {
+      return {
+        [sentinel_]: 'raw',
+        body,
+        contentType: opts.contentType,
+        status: opts.status ?? 200,
+        headers: opts.headers ?? {},
+      } as never
+    }
 
     const result = command.run({
       agent: true,
@@ -1615,6 +1665,7 @@ async function executeCommand(
       name: path,
       ok: okFn,
       options: parsedOptions,
+      raw: rawFn,
       var: varsMap,
       version: undefined,
     })
@@ -1696,6 +1747,16 @@ async function executeCommand(
 
     if (typeof awaited === 'object' && awaited !== null && sentinel_ in awaited) {
       const tagged = awaited as any
+
+      // Raw result — bypass JSON envelope, return Response as-is
+      if (tagged[sentinel_] === 'raw') {
+        response = new Response(tagged.body, {
+          status: tagged.status,
+          headers: { 'content-type': tagged.contentType, ...tagged.headers },
+        })
+        return
+      }
+
       if (tagged[sentinel_] === 'error')
         response = jsonResponse(
           {
@@ -2112,6 +2173,15 @@ type ErrorResult = {
   cta?: CtaBlock | undefined
 }
 
+/** @internal A tagged raw result returned by the `raw` context helper. Bypasses the JSON envelope. */
+type RawResult = {
+  [sentinel]: 'raw'
+  body: Uint8Array | string
+  contentType: string
+  status: number
+  headers: Record<string, string>
+}
+
 /** @internal A CTA block with a description and list of suggested commands. */
 type CtaBlock<commands extends CommandsMap = Commands> = {
   /** Commands to suggest. */
@@ -2151,7 +2221,7 @@ function hasRequiredArgs(args: z.ZodObject<z.ZodRawShape>): boolean {
   return Object.values(args.shape).some((field) => field._zod.optout !== 'optional')
 }
 
-function isSentinel(value: unknown): value is OkResult | ErrorResult {
+function isSentinel(value: unknown): value is OkResult | ErrorResult | RawResult {
   return typeof value === 'object' && value !== null && sentinel in value
 }
 
@@ -2708,6 +2778,15 @@ type CommandDefinition<
     /** Return a success result with optional metadata (e.g. CTAs). */
     ok: (data: InferReturn<output>, meta?: { cta?: CtaBlock | undefined }) => never
     options: InferOutput<options>
+    /** Return a raw response, bypassing the JSON envelope. CLI writes binary to stdout, HTTP returns as-is, MCP returns base64. */
+    raw: (
+      body: Uint8Array | string,
+      options: {
+        contentType: string
+        status?: number | undefined
+        headers?: Record<string, string> | undefined
+      },
+    ) => never
     /** Variables set by middleware. */
     var: InferVars<vars>
     /** The CLI version string. */
