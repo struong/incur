@@ -25,7 +25,7 @@ export function isFileSchema(schema: unknown): boolean {
   let current: any = schema
   while (current) {
     if (typeof current.meta === 'function' && current.meta()?.incurType === 'file') return true
-    current = current._zod?.def?.innerType
+    current = current._zod?.def?.innerType ?? current._zod?.def?.element
   }
   return false
 }
