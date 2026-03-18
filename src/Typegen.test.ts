@@ -1,4 +1,4 @@
-import { Cli, Typegen, z } from 'incur'
+import { Cli, Typegen, z, file } from 'incur'
 
 describe('fromCli', () => {
   test('simple commands with args and options', () => {
@@ -167,6 +167,30 @@ describe('fromCli', () => {
 
     const output = Typegen.fromCli(cli)
     expect(output).toContain('config: { host: string; port: number }')
+  })
+
+  test('optional fields use ?:', () => {
+    const cli = Cli.create('test').command('cmd', {
+      options: z.object({
+        name: z.string(),
+        limit: z.number().optional(),
+        state: z.enum(['open', 'closed']).default('open'),
+      }),
+      run: () => ({}),
+    })
+    const output = Typegen.fromCli(cli)
+    expect(output).toContain('name: string')
+    expect(output).toContain('limit?: number')
+    expect(output).toContain('state: "open" | "closed"')
+  })
+
+  test('file() args emit correct type', () => {
+    const cli = Cli.create('test').command('upload', {
+      args: z.object({ data: file() }),
+      run: () => ({}),
+    })
+    const output = Typegen.fromCli(cli)
+    expect(output).toContain('data: { bytes: Uint8Array; name?: string }')
   })
 
   test('mixed top-level and grouped commands', () => {

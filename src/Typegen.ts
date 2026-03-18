@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import * as Cli from './Cli.js'
 import { isFileSchema } from './File.js'
+import * as Schema from './Schema.js'
 import { importCli } from './internal/utils.js'
 
 /** Imports a CLI from `input` (must `export default` a `Cli`), generates the `.d.ts`, and writes it to `output`. */
@@ -46,13 +47,15 @@ function collectEntries(
 /** Converts a Zod object schema to a TypeScript type string. Returns `{}` for undefined schemas. */
 function schemaToType(schema: z.ZodObject<any> | undefined): string {
   if (!schema) return '{}'
-  const json = z.toJSONSchema(schema) as Record<string, unknown>
+  const json = Schema.toJsonSchema(schema) as Record<string, unknown>
   const defs = (json.$defs ?? {}) as Record<string, Record<string, unknown>>
   const properties = json.properties as Record<string, Record<string, unknown>> | undefined
   if (!properties || Object.keys(properties).length === 0) return '{}'
+  const required = new Set((json.required as string[]) ?? [])
   const entries = Object.entries(properties).map(([key, value]) => {
-    if (isFileSchema(schema.shape[key])) return `${key}: { bytes: Uint8Array; name?: string }`
-    return `${key}: ${resolveType(value, defs)}`
+    const sep = required.has(key) ? ':' : '?:'
+    if (isFileSchema(schema.shape[key])) return `${key}${sep} { bytes: Uint8Array; name?: string }`
+    return `${key}${sep} ${resolveType(value, defs)}`
   })
   return `{ ${entries.join('; ')} }`
 }
