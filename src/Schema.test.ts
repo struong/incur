@@ -1,4 +1,4 @@
-import { Schema, z } from 'incur'
+import { file, Schema, z } from 'incur'
 
 describe('toJsonSchema', () => {
   test('converts z.string()', () => {
@@ -93,6 +93,22 @@ describe('toJsonSchema', () => {
     expect(result).toMatchObject({
       properties: {
         zone: { type: 'string', description: 'Availability zone', deprecated: true },
+      },
+    })
+  })
+
+  test('file().optional() is not required', () => {
+    const result = Schema.toJsonSchema(
+      z.object({
+        data: file(),
+        attachment: file().optional(),
+      }),
+    )
+    expect(result).toMatchObject({
+      required: ['data'],
+      properties: {
+        data: { type: 'string', format: 'binary' },
+        attachment: { type: 'string', format: 'binary' },
       },
     })
   })
